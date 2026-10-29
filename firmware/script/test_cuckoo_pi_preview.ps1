@@ -1,0 +1,146 @@
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+
+function Assert-True {
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { throw "Preview contract failed: $Message" }
+}
+
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$svgPath = Join-Path $projectRoot '文档\UI预览\cuckoo-pi-screen-ui-preview.svg'
+$htmlPath = Join-Path $projectRoot '文档\UI预览\cuckoo-pi-screen-ui-preview.html'
+$gmt154SvgPath = Join-Path $projectRoot '文档\UI预览\gmt154-06-cuckoo-pi-thermostat-preview.svg'
+$gmt154HtmlPath = Join-Path $projectRoot '文档\UI预览\gmt154-06-gateway-screen-preview.html'
+$uiPath = Join-Path $PSScriptRoot '..\src\ui_gravitymon_gateway.cpp'
+Assert-True ($svgPath -eq (Join-Path $projectRoot '文档\UI预览\cuckoo-pi-screen-ui-preview.svg')) 'SVG path must remain exact'
+Assert-True ($htmlPath -eq (Join-Path $projectRoot '文档\UI预览\cuckoo-pi-screen-ui-preview.html')) 'HTML path must remain exact'
+Assert-True ($uiPath -eq (Join-Path $PSScriptRoot '..\src\ui_gravitymon_gateway.cpp')) 'UI source path must remain exact'
+$svg = Get-Content -LiteralPath $svgPath -Raw
+$html = Get-Content -LiteralPath $htmlPath -Raw
+$gmt154Svg = Get-Content -LiteralPath $gmt154SvgPath -Raw
+$gmt154Html = Get-Content -LiteralPath $gmt154HtmlPath -Raw
+$ui = Get-Content -LiteralPath $uiPath -Raw
+
+# Both boards must be source-sized screens rendered at one common preview scale.
+Assert-True ($svg -match 'id="landscape-screen"[^>]*data-screen-width="480"[^>]*data-screen-height="320"[^>]*data-preview-scale="1\.5"') 'landscape must declare 480x320 at 1.5x'
+Assert-True ($svg -match 'id="portrait-screen"[^>]*data-screen-width="320"[^>]*data-screen-height="480"[^>]*data-preview-scale="1\.5"') 'portrait must declare 320x480 at 1.5x'
+Assert-True ($svg -match 'viewBox="0 0 1360 900"') 'SVG canvas must fit both boards at the same scale'
+
+# Keep preview text and separators aligned with the current firmware renderer.
+Assert-True (-not $svg.Contains('STATE TIME')) 'STATE TIME is not rendered by the firmware'
+Assert-True (-not $svg.Contains('°C')) 'firmware currently renders a space plus C/F unit'
+Assert-True (-not $svg.Contains('M25 272')) 'portrait temperature-to-mode separator was removed from firmware'
+Assert-True (-not $svg.Contains('Cuckoo Pi:')) 'preview must show only the device id in the header'
+Assert-True ($svg.Contains('001122334455')) 'preview must show the device id'
+Assert-True ($svg.Contains('RUN TIME')) 'preview must show the runtime label'
+Assert-True ($svg.Contains('29m 0s')) 'preview runtime must use formatCuckooPiRuntime output'
+Assert-True ($svg.Contains('#F6B73C')) 'preview must use the black-and-gold primary accent'
+Assert-True ($svg.Contains('#151411')) 'preview must use the warm black screen background'
+Assert-True (-not $svg.Contains('<circle')) 'preview must not add a pseudo-online dot'
+Assert-True ($svg.Contains('#45D9B2')) 'preview online color must match firmware'
+Assert-True ($svg.Contains('class="screen-text medium white" font-size="14">001122334455</text>')) 'device id must be white'
+Assert-True ($svg.Contains('class="screen-text medium online"')) 'online status must remain green'
+Assert-True ($svg.Contains('class="screen-text gold" fill="#FFFFFF" font-size="12">BEER TEMPERATURE</text>')) 'beer heading must be gold'
+Assert-True ($svg.Contains('class="screen-text medium white" font-size="72">23.75</text>')) 'beer temperature value must be white'
+Assert-True ($svg.Contains('<tspan class="gold">BEER SET</tspan> 10.50 C')) 'beer set label must be gold and value white'
+Assert-True ($svg.Contains('<tspan x="125" dy="-10" class="gold">FRIDGE TEMP</tspan><tspan x="125" dy="22" font-size="20">24.50 C</tspan>')) 'metric label must be gold and metric value white'
+Assert-True ($svg -match '<rect x="330" y="54" width="138" height="40"' ) 'landscape mode must match the v8 card geometry'
+Assert-True ($svg -match '<rect x="166" y="62" width="138" height="32"' ) 'portrait mode must match the v8 card geometry'
+Assert-True ($svg.Contains("url('../fonts/Montserrat-Regular.ttf')")) 'SVG must use the archived local Regular font'
+Assert-True ($svg.Contains("url('../fonts/Montserrat-Medium.ttf')")) 'SVG must use the archived local Medium font'
+Assert-True ($svg -match 'class="screen-text medium[^\"]*"') 'SVG must mark firmware Medium text explicitly'
+Assert-True (-not $svg.Contains('Arial')) 'SVG must not fall back to Arial'
+Assert-True ($svg -match '<text x="125" y="279"' ) 'landscape fridge temp must occupy the left half of the bottom row'
+Assert-True ($svg -match '<text x="373" y="166"' ) 'landscape fridge set must sit beside beer set'
+Assert-True ($svg -match '<text x="355" y="279"' ) 'landscape chiller must occupy the right half of the bottom row'
+Assert-True ($svg -match '<text x="160" y="267"' ) 'portrait fridge set must sit beside beer set'
+Assert-True ($svg -match '<text x="84" y="407"' ) 'portrait fridge temp must occupy the left half of the bottom row'
+Assert-True ($svg -match '<text x="236" y="407"' ) 'portrait chiller must occupy the right half of the bottom row'
+Assert-True ($svg -match '<text x="244" y="116"[^>]*font-size="72"' ) 'landscape beer temperature must be the dominant 72px value'
+Assert-True ($svg -match '<text x="260" y="151"[^>]*font-size="80"' ) 'portrait beer temperature must be the dominant 80px value'
+Assert-True ($svg.Contains('<tspan x="84" dy="-22" class="gold">FRIDGE</tspan><tspan x="84" dy="22" class="gold">TEMP</tspan>')) 'SVG portrait fridge title must wrap to two lines'
+Assert-True ($svg.Contains('<tspan x="160" dy="-8" class="gold">RUN TIME</tspan><tspan x="160" dy="17"')) 'SVG portrait runtime must remain two lines'
+Assert-True ($svg.Contains('<tspan x="236" dy="22" class="gold"')) 'SVG chiller placeholder must use the firmware gold placeholder'
+
+# The firmware title must use the same compact, left-aligned header treatment.
+Assert-True ($ui.Contains('snprintf(title, sizeof(title), "%s", device_id[0] ? device_id : "--");')) 'firmware must publish only the device id as the title'
+Assert-True ($ui -match 'lv_obj_set_style_text_align\(g_state\.cuckoo_title,\s*LV_TEXT_ALIGN_LEFT,\s*LV_PART_MAIN\);') 'firmware title must be left aligned'
+Assert-True (-not $ui.Contains('snprintf(title, sizeof(title), "Cuckoo Pi: %s", device_id);')) 'firmware must not retain the old title prefix'
+Assert-True ($ui.Contains('lv_obj_t* cuckoo_value[10];')) 'firmware must reserve the chiller value slot'
+Assert-True ($ui.Contains('create_cuckoo_absolute_value')) 'temperature labels must be root labels before absolute positioning'
+Assert-True ($ui.Contains('set_cuckoo_temperature_group(g_state.cuckoo_value[3], g_state.cuckoo_value[8],')) 'firmware must use the temperature group on initialization and refresh'
+Assert-True ($ui.Contains('set_cuckoo_responsive_text(g_state.cuckoo_value[1], layout.mode')) 'firmware mode must use responsive measured text'
+Assert-True ($ui.Contains('lv_text_get_size')) 'firmware must measure LVGL text width'
+Assert-True (-not $ui.Contains('LV_TEXT_FLAG_RECOLOR')) 'firmware must not depend on removed LVGL recolor markup'
+Assert-True ($ui.Contains('create_cuckoo_colored_pair')) 'firmware must use explicit colored label/value pairs'
+Assert-True ($ui.Contains('lv_obj_set_style_text_color(label, lv_color_hex(0xF6B73C)')) 'firmware field labels must be explicitly gold'
+Assert-True ($ui.Contains('LV_LABEL_LONG_SCROLL_CIRCULAR')) 'oversized text must remain visible through scrolling'
+Assert-True ($ui.Contains('lv_label_get_text(label)')) 'responsive text must inspect existing text before refreshing'
+Assert-True ($ui.Contains('lv_obj_get_style_text_font(label, LV_PART_MAIN)')) 'responsive text must inspect existing font before refreshing'
+Assert-True ($ui.Contains('lv_label_get_long_mode(label)')) 'responsive text must inspect existing long mode before refreshing'
+Assert-True ($ui.Contains('lv_obj_get_width(label) == rect.width')) 'responsive text must preserve an unchanged label geometry'
+Assert-True ($ui.Contains('if (unchanged) return;')) 'responsive text must not restart unchanged scrolling labels'
+Assert-True ($ui.Contains('formatCuckooPiRuntime(')) 'firmware must use the runtime formatter'
+Assert-True ($ui.Contains('portrait ? "FRIDGE\nTEMP" : "FRIDGE TEMP"')) 'portrait fridge temperature title must wrap like the preview'
+Assert-True ($ui.Contains('"FRIDGE SET", value')) 'firmware fridge set must be a separate near-beer value'
+Assert-True ($ui.Contains('layout.chiller')) 'firmware bottom right metric must use chiller geometry'
+
+# The browser preview must use the same visual scale and must not reintroduce
+# the old decorative layout independently from the SVG.
+Assert-True ($html -match '\.landscape-screen\s*\{[^}]*width:\s*720px;[^}]*height:\s*480px;') 'HTML landscape must be 1.5x'
+Assert-True ($html -match '\.portrait-screen\s*\{[^}]*width:\s*480px;[^}]*height:\s*720px;') 'HTML portrait must be 1.5x'
+Assert-True (-not $html.Contains('STATE TIME')) 'HTML must not contain stale STATE TIME content'
+Assert-True (-not $html.Contains('°C')) 'HTML must not contain stale degree-symbol content'
+Assert-True (-not $html.Contains('Cuckoo Pi:')) 'HTML must show only the device id in the header'
+Assert-True ($html -match '--screen:\s*#151411;') 'HTML must use the warm black background'
+Assert-True ($html -match '--amber:\s*#f6b73c;') 'HTML must use the gold primary accent'
+Assert-True (-not $html.Contains('.online::before')) 'HTML must not add a pseudo-online dot'
+Assert-True ($html -match '--online:\s*#45D9B2;') 'HTML online color must match firmware'
+Assert-True ($html -match '--text:\s*#FFFFFF;') 'HTML screen text must default to white'
+Assert-True ($html -match '\.title\s*\{[^}]*color:\s*var\(--text\);') 'HTML device id must be white'
+Assert-True ($html -match '\.heading\s*\{[^}]*color:\s*var\(--amber\);') 'HTML field heading must be gold'
+Assert-True ($html -match '\.mode-card\s*\{[^}]*color:\s*var\(--text\);') 'HTML Beer Profile must be white'
+Assert-True ($html -match '\.beer-group\s*\{[^}]*color:\s*var\(--text\);') 'HTML temperature value must be white'
+Assert-True ($html.Contains('<span class="gold">BEER SET</span>&nbsp; <strong>10.50 C</strong>')) 'HTML setpoint label must be gold and value white'
+Assert-True ($html.Contains('<div class="state"><span class="gold">STATE</span><strong>Cooling</strong></div>')) 'HTML state label must be gold and state value white'
+Assert-True ($html.Contains('<div class="runtime"><span class="gold">RUN TIME</span><strong>29m 0s</strong></div>')) 'HTML runtime label must be gold and runtime value white'
+Assert-True (-not $html.Contains('Arial')) 'HTML must not fall back to Arial'
+Assert-True ($html.Contains("url('../fonts/Montserrat-Regular.ttf')")) 'HTML must use the archived local Regular font'
+Assert-True ($html.Contains("url('../fonts/Montserrat-Medium.ttf')")) 'HTML must use the archived local Medium font'
+Assert-True ($html -match '\.landscape \.mode-card\s*\{[^}]*left:\s*330px;[^}]*top:\s*54px;[^}]*width:\s*138px;[^}]*height:\s*40px;') 'HTML landscape mode pill must match firmware geometry'
+Assert-True ($html -match '\.portrait \.mode-card\s*\{[^}]*left:\s*166px;[^}]*top:\s*62px;[^}]*width:\s*138px;[^}]*height:\s*32px;') 'HTML portrait mode pill must match firmware geometry'
+Assert-True ($html -match '\.landscape \.setpoint\.fridge-set\s*\{[^}]*left:\s*286px;[^}]*top:\s*151px;[^}]*width:\s*174px;') 'HTML landscape fridge set must sit beside beer set'
+Assert-True ($html -match '\.landscape \.metric\.fridge\s*\{[^}]*left:\s*24px;[^}]*top:\s*248px;') 'HTML landscape fridge temp must be left in the shared row'
+Assert-True ($html -match '\.landscape \.metric\.chiller\s*\{[^}]*left:\s*254px;[^}]*top:\s*248px;') 'HTML landscape chiller must be right in the shared row'
+Assert-True ($html -match '\.portrait \.setpoint\.fridge-set\s*\{[^}]*left:\s*16px;[^}]*top:\s*248px;[^}]*width:\s*288px;[^}]*font-size:\s*16px;') 'HTML portrait fridge set must use preferred 16px'
+Assert-True ($html -match '\.portrait \.state\s*\{[^}]*left:\s*16px;[^}]*top:\s*284px;') 'HTML portrait state must follow fridge set'
+Assert-True ($html -match '\.portrait \.runtime\s*\{[^}]*left:\s*16px;[^}]*top:\s*342px;') 'HTML portrait runtime must follow state'
+Assert-True ($html -match '\.portrait \.metric\.fridge\s*\{[^}]*left:\s*16px;[^}]*top:\s*392px;') 'HTML portrait fridge temp must be left in the shared row'
+Assert-True ($html -match '\.portrait \.metric\.chiller\s*\{[^}]*left:\s*168px;[^}]*top:\s*392px;') 'HTML portrait chiller must be right in the shared row'
+Assert-True ($html.Contains('.metric.chiller strong { color: var(--text); }')) 'HTML chiller value must use white color'
+Assert-True ($html.Contains('<span>FRIDGE<br>TEMP</span>')) 'HTML portrait fridge title must wrap to two lines'
+
+# GMT154-06 uses the square thermostat contract, independently from the
+# existing 3.5-inch Cuckoo Pi preview above.
+Assert-True (-not ($gmt154Svg -match '(?i)>\s*(?:\d+\s*/\s*\d+|CURRENT\s*/\s*TOTAL|INDEX)\s*</text>')) 'GMT154 preview must not show device index text'
+Assert-True ($gmt154Svg -match '(?i)>\s*CURRENT MODE\s*</text>') 'GMT154 preview must show Current Mode in the left cell'
+Assert-True ($gmt154Svg -match '(?i)>\s*Fridge Constant\s*</text>') 'GMT154 preview must show Fridge Constant in the left cell'
+Assert-True ($gmt154Svg -match '<text x="273" y="470"[^>]*font-size="12"[^>]*>Fridge Constant</text>') 'GMT154 left cell must fit Fridge Constant at 12px'
+Assert-True ($gmt154Svg -match '<text x="273" y="608"[^>]*>Fridge Constant</text>') 'GMT154 mode 1 sample must show Fridge Constant in MODE'
+Assert-True ($gmt154Svg -match '(?i)FRIDGE TEMPERATURE') 'GMT154 mode 1 preview must show fridge temperature'
+Assert-True ($gmt154Svg -match '(?i)FRIDGE\s+SET') 'GMT154 preview must show Fridge Set'
+Assert-True ($gmt154Svg -match '(?i)>MODE<') 'GMT154 preview must show Mode'
+Assert-True ($gmt154Svg -match '(?i)>STATE<') 'GMT154 preview must show State'
+Assert-True ($gmt154Svg -match '<rect x="148" y="158" width="464" height="464"[^>]*fill="#000000"') 'GMT154 active LCD glass must be pure black'
+Assert-True (-not ($gmt154Svg -match '(?i)#0b2029|#061319')) 'GMT154 preview must not retain blue-green LCD fills'
+Assert-True (-not $gmt154Svg.Contains('<rect x="166" y="581"')) 'GMT154 preview must remove the bottom separator'
+Assert-True ($gmt154Svg.Contains('<text x="273" y="548"')) 'GMT154 preview MODE label/value group must be recentered'
+Assert-True ($gmt154Svg.Contains('<text x="273" y="608"')) 'GMT154 preview MODE value must remain in the extended lower area'
+Assert-True ($gmt154Html -match '\.header\s*\{[^}]*background:\s*#000000;') 'GMT154 HTML header strip must be pure black'
+Assert-True ($gmt154Html -match '\.ip-panel\s*\{[^}]*background:\s*#000000;') 'GMT154 HTML IP panel must be pure black'
+Assert-True ($gmt154Html -match '\.rule\s*\{[^}]*background:\s*#2f8f78;') 'GMT154 HTML header divider must remain teal'
+Assert-True ($gmt154Html -match '\.rssi-value\s*\{[^}]*color:\s*#ffc247;') 'GMT154 HTML RSSI accent must remain unchanged'
+
+Write-Output 'Cuckoo Pi preview contract: PASS'

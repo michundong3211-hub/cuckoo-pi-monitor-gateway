@@ -1,0 +1,10 @@
+web-ui/node_modules/
+web-ui/dist/
+firmware/.pio/
+firmware/bin/
+firmware/test/.*/
+*.log
+.env
+.env.*
+__pycache__/
+*.pyc
