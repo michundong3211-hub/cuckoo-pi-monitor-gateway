@@ -26,8 +26,6 @@ function New-HostTest {
 # be visible in the review diff rather than being hidden by a broad glob.
 $manifest = @(
     (New-HostTest 'gmt154_offline_frame_host_test.cpp')
-    (New-HostTest 'gmt154_merged_audio_host_test.cpp' @('src/gateway_alarm.cpp'))
-    (New-HostTest 'gmt154_merged_playback_host_test.cpp' @('src/gateway_audio.cpp', 'src/gravity_display_units.cpp'))
     (New-HostTest 'gmt154_lvgl_budget_host_test.cpp' @() @('test/host/lvglbudget_stubs'))
     (New-HostTest 'gmt154_ap_diagnostics_host_test.cpp')
     (New-HostTest 'gmt154_ap_diagnostics_runtime_host_test.cpp' @() @('test/host/apdiag_stubs'))

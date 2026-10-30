@@ -20,7 +20,7 @@
 
       <div class="row g-3 mb-3">
         <div class="col-md-8"><label for="mqtt-broker" class="form-label">MQTT broker</label><input id="mqtt-broker" v-model.trim="draft.broker" class="form-control" :disabled="global.disabled" /></div>
-        <div class="col-md-4"><label for="mqtt-port" class="form-label">Port</label><input id="mqtt-port" v-model.number="draft.port" class="form-control" type="number" min="1" max="65535" :disabled="global.disabled" /></div>
+        <div class="col-md-4"><label for="mqtt-port" class="form-label">Port</label><input id="mqtt-port" :value="draft.port || ''" class="form-control" type="number" min="1" max="65535" placeholder="e.g. 1883" :disabled="global.disabled" @input="updatePort" /></div>
         <div class="col-md-6"><label for="mqtt-username" class="form-label">Username</label><input id="mqtt-username" v-model="draft.username" class="form-control" autocomplete="off" :disabled="global.disabled" /></div>
         <div class="col-md-6"><label for="mqtt-password" class="form-label">Password</label><input id="mqtt-password" v-model="draft.password" class="form-control" type="password" autocomplete="new-password" :disabled="global.disabled" /></div>
       </div>
@@ -163,10 +163,20 @@ function lastMessage(id) {
     : '--'
 }
 
+function updatePort(event) {
+  const value = event.target.value
+  draft.port = value === '' ? 0 : Number(value)
+}
+
 async function save() {
   if (!canSave.value) return
   if (!validateCurrentForm()) return
-  if (!draft.broker || draft.port < 1 || draft.port > 65535) {
+  if (
+    !draft.broker ||
+    !Number.isInteger(draft.port) ||
+    draft.port < 1 ||
+    draft.port > 65535
+  ) {
     global.messageError = 'Enter a valid MQTT broker and port.'
     return
   }

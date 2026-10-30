@@ -1,8 +1,4 @@
 #include "gateway_audio.hpp"
-#if defined(GMT154_06)
-#include "gmt154_merged_audio.hpp"
-#endif
-
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -52,37 +48,6 @@ int16_t gatewayAudioPcmSample(float normalizedSample, float amplitudeScale) {
   if (value > 32767.0f) value = 32767.0f;
   if (value < -32768.0f) value = -32768.0f;
   return static_cast<int16_t>(value);
-}
-
-GatewayAudioPlaybackStepResult gatewayAudioPlayMergedWindow(
-    const GatewayAudioQueueItem& item, GatewayAudioPlaybackSink* sink,
-    uint32_t (*nowMs)()) {
-  if (!sink || !nowMs || !item.decision.should_play)
-    return GatewayAudioPlaybackStepResult::WriteFailed;
-  const uint32_t start = nowMs();
-  while (static_cast<uint32_t>(nowMs() - start) < 15000UL) {
-    const uint16_t durations[] = {item.decision.first_duration_ms,
-                                  item.decision.gap_ms,
-                                  item.decision.second_duration_ms};
-    for (unsigned phase = 0; phase < 3; ++phase) {
-      const uint32_t elapsed = nowMs() - start;
-      if (elapsed >= 15000UL) break;
-      const uint16_t remaining = static_cast<uint16_t>(15000UL - elapsed);
-      const uint16_t duration = durations[phase] < remaining
-                                    ? durations[phase] : remaining;
-      const auto result = phase == 1
-          ? sink->waitGap(item, duration)
-          : sink->writeTone(item, phase == 0 ? item.decision.first_frequency_hz
-                                             : item.decision.second_frequency_hz,
-                            duration);
-      if (result != GatewayAudioPlaybackStepResult::Completed) {
-        sink->writeSilence(item);
-        return result;
-      }
-    }
-  }
-  sink->writeSilence(item);
-  return GatewayAudioPlaybackStepResult::Completed;
 }
 
 GatewayAudioPlaybackStepResult gatewayAudioPlayTone(
@@ -1041,11 +1006,6 @@ void GatewayAudio::begin() {
 bool GatewayAudio::queueAlarm(const GatewayAlarmEvent& event) {
 #if defined(ENABLE_GATEWAY_AUDIO) && defined(ARDUINO_ARCH_ESP32)
   if (!_available) return false;
-#if defined(GMT154_06)
-  // GMT uses one gateway-wide audible session, not per-event queue entries.
-  (void)event;
-  return true;
-#else
   GatewayAudioQueueItem item{};
   item.decision = gatewayAudioDecisionForAlarm(event.type);
   item.event = event;
@@ -1069,7 +1029,6 @@ bool GatewayAudio::queueAlarm(const GatewayAlarmEvent& event) {
                   (unsigned long)(uint32_t)(event.event_token & 0xffffffffUL),
                   (int)event.repeat_index);
   return true;
-#endif
 #else
   (void)event;
   return false;
@@ -1089,9 +1048,7 @@ GatewayAudioCancelResult GatewayAudio::cancelExactResult(
   // Silence the I2S DMA ring immediately: its content keeps cycling when no
   // new data arrives, so the tail of the last tone would otherwise keep
   // sounding after the cancel.
-#if !defined(GMT154_06)
   writeSilence();
-#endif
   return result;
 #else
   (void)event;
@@ -1105,9 +1062,7 @@ GatewayAudioCancelResult GatewayAudio::cancelByKeyResult(
   if (!_available) return GatewayAudioCancelResult::NotFound;
   const GatewayAudioCancelResult result =
       _scheduler.cancelByKeyResult(type, deviceId);
-#if !defined(GMT154_06)
   writeSilence();
-#endif
   return result;
 #else
   (void)type;
@@ -1137,11 +1092,7 @@ size_t GatewayAudio::pendingCount() const {
 }
 
 bool GatewayAudio::isActive() const {
-#if defined(GMT154_06) && defined(ENABLE_GATEWAY_AUDIO) && defined(ARDUINO_ARCH_ESP32)
-  return _mergedPlaying.load(std::memory_order_acquire);
-#else
   return _scheduler.active();
-#endif
 }
 
 #if defined(ENABLE_GATEWAY_AUDIO) && defined(ARDUINO_ARCH_ESP32)
@@ -1150,34 +1101,6 @@ void GatewayAudio::audioTaskEntry(void* parameter) {
 }
 
 void GatewayAudio::audioTaskLoop() {
-#if defined(GMT154_06)
-  Gmt154MergedAudioCycle cycle;
-  GatewayAudibleSummary summary{};
-  for (;;) {
-    if (!_available) { vTaskDelay(pdMS_TO_TICKS(10)); continue; }
-    GatewayAudibleSummary current{};
-    if (gatewayAlarmTracker.tryCopyAudibleSummary(&current)) summary = current;
-    if (cycle.update(summary.any, millis())) {
-      GatewayAudioQueueItem item{};
-      item.decision = gatewayAudioDecisionForAlarm(
-          summary.temperature ? GatewayAlarmType::TemperatureChange
-                              : GatewayAlarmType::Offline);
-      Log.notice(F("AUD : merged tone start." CR));
-      _mergedPlaying.store(true, std::memory_order_release);
-      const auto result = playMergedTone(item);
-      _mergedPlaying.store(false, std::memory_order_release);
-      if (result == GatewayAudioPlaybackStepResult::Cancelled)
-        cycle.playbackCancelled();
-      if (result == GatewayAudioPlaybackStepResult::WriteFailed) {
-        Log.warning(F("AUD : merged tone stopped: I2S write failed." CR));
-      } else {
-        Log.notice(F("AUD : merged tone done, result=%d." CR),
-                   static_cast<int>(result));
-      }
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-#else
   GatewayAudioQueueItem item{};
   uint32_t idleIterations = 0;
   for (;;) {
@@ -1212,18 +1135,11 @@ void GatewayAudio::audioTaskLoop() {
       vTaskDelay(pdMS_TO_TICKS(1));
     }
   }
-#endif
 }
 
 bool GatewayAudio::isActiveCancelled(
     const GatewayAudioQueueItem& item) const {
-#if defined(GMT154_06)
-  (void)item;
-  GatewayAudibleSummary summary{};
-  return gatewayAlarmTracker.tryCopyAudibleSummary(&summary) && !summary.any;
-#else
   return _scheduler.isCancelled(item.event.event_token);
-#endif
 }
 
 class GatewayAudio::I2sPlaybackSink : public GatewayAudioPlaybackSink {
@@ -1283,17 +1199,6 @@ void GatewayAudio::playTone(const GatewayAudioQueueItem& item) {
   I2sPlaybackSink sink(*this, item);
   (void)gatewayAudioPlayTone(item, &sink);
 }
-
-#if defined(GMT154_06)
-GatewayAudioPlaybackStepResult GatewayAudio::playMergedTone(const GatewayAudioQueueItem& item) {
-  if (!_available || _tx_handle == nullptr)
-    return GatewayAudioPlaybackStepResult::WriteFailed;
-  I2sPlaybackSink sink(*this, item);
-  return gatewayAudioPlayMergedWindow(item, &sink, []() -> uint32_t {
-    return millis();
-  });
-}
-#endif
 
 GatewayAudioPlaybackStepResult GatewayAudio::playSingleTone(
     const GatewayAudioQueueItem& item, uint16_t frequencyHz,

@@ -209,6 +209,29 @@ describe('CuckooPiView', () => {
     expect(config.cuckoo_pi).toMatchObject({ broker: 'other.example', port: 1883, username: 'test-user', password: 'synthetic-secret' })
     expect(config.saveAll).toHaveBeenCalledTimes(1)
   })
+  it('shows a blank default port and requires a manually supplied valid endpoint', async () => {
+    config.cuckoo_pi = {
+      enabled: true,
+      broker: '',
+      port: 0,
+      client_id: '',
+      username: '',
+      password: '',
+      devices: []
+    }
+    const wrapper = mountView()
+
+    expect(wrapper.get('#mqtt-port').element.value).toBe('')
+    await wrapper.get('#mqtt-port').setValue('')
+    await wrapper.get('form').trigger('submit')
+    expect(config.saveAll).not.toHaveBeenCalled()
+
+    await wrapper.get('#mqtt-broker').setValue('broker.example')
+    await wrapper.get('#mqtt-port').setValue('1884')
+    await wrapper.get('form').trigger('submit')
+    expect(config.cuckoo_pi).toMatchObject({ broker: 'broker.example', port: 1884 })
+    expect(config.saveAll).toHaveBeenCalledTimes(1)
+  })
   it('keeps global and device-list edits out of Pinia until Save', async () => {
     const original = {
       enabled: true,

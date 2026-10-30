@@ -29,7 +29,7 @@ describe('cuckooPi helpers', () => {
     expect(defaultCuckooPiConfig()).toEqual({
       enabled: true,
       broker: '',
-      port: 1884,
+      port: 0,
       client_id: '',
       username: '',
       password: '',
@@ -45,7 +45,7 @@ describe('cuckooPi helpers', () => {
     })
   })
 
-  it('migrates the previous built-in broker port to the new port', () => {
+  it('clears legacy default ports only when the broker is blank', () => {
     expect(
       normalizeCuckooPiConfig({
         broker: '',
@@ -56,11 +56,17 @@ describe('cuckooPi helpers', () => {
       })
     ).toMatchObject({
       broker: '',
-      port: 1884,
+      port: 0,
       client_id: '',
       username: '',
       password: ''
     })
+    expect(
+      normalizeCuckooPiConfig({ broker: '', port: 1884 }).port
+    ).toBe(0)
+    expect(
+      normalizeCuckooPiConfig({ broker: 'broker.example', port: 1884 }).port
+    ).toBe(1884)
   })
 
   it('normalizes devices, rejects duplicates and preserves MQTT authentication', () => {

@@ -99,6 +99,60 @@ int main() {
   const std::string mainGateway = readFile("src/main_gateway.cpp");
   const std::string uiGateway = readFile("src/ui_gravitymon_gateway.cpp");
 
+  const size_t queueAlarmStart = audio.find("bool GatewayAudio::queueAlarm(");
+  const size_t queueAlarmEnd = audio.find("bool GatewayAudio::cancelExact(",
+                                         queueAlarmStart);
+  const std::string queueAlarm =
+      queueAlarmStart == std::string::npos || queueAlarmEnd == std::string::npos
+          ? std::string()
+          : audio.substr(queueAlarmStart, queueAlarmEnd - queueAlarmStart);
+  require(queueAlarm, "_scheduler.enqueue(item)",
+          "GMT154 queues the same per-event alarm items as Waveshare");
+  reject(queueAlarm, "Gmt154Merged",
+         "GMT154 does not discard alarm events for merged playback");
+
+  const size_t isActiveStart = audio.find("bool GatewayAudio::isActive() const {");
+  const size_t isActiveEnd = audio.find("#if defined(ENABLE_GATEWAY_AUDIO)",
+                                       isActiveStart);
+  const std::string isActive =
+      isActiveStart == std::string::npos || isActiveEnd == std::string::npos
+          ? std::string()
+          : audio.substr(isActiveStart, isActiveEnd - isActiveStart);
+  require(isActive, "return _scheduler.active();",
+          "GMT154 reports activity from the shared event scheduler");
+  reject(isActive, "_mergedPlaying",
+         "GMT154 does not use the removed merged playback state");
+
+  const size_t audioTaskStart = audio.find("void GatewayAudio::audioTaskLoop() {");
+  const size_t cancelCheckStart = audio.find(
+      "bool GatewayAudio::isActiveCancelled(", audioTaskStart);
+  const std::string audioTask =
+      audioTaskStart == std::string::npos || cancelCheckStart == std::string::npos
+          ? std::string()
+          : audio.substr(audioTaskStart, cancelCheckStart - audioTaskStart);
+  require(audioTask, "_scheduler.takeNext(&item)",
+          "GMT154 audio task consumes shared queued alarm events");
+  require(audioTask, "playTone(item)",
+          "GMT154 audio task plays the common short alarm pattern");
+  reject(audioTask, "Gmt154MergedAudioCycle",
+         "GMT154 no longer runs a separate gateway-wide alarm cycle");
+
+  const size_t cancelCheckEnd = audio.find("class GatewayAudio::I2sPlaybackSink",
+                                           cancelCheckStart);
+  const std::string cancelCheck =
+      cancelCheckStart == std::string::npos || cancelCheckEnd == std::string::npos
+          ? std::string()
+          : audio.substr(cancelCheckStart, cancelCheckEnd - cancelCheckStart);
+  require(cancelCheck, "_scheduler.isCancelled(item.event.event_token)",
+          "GMT154 stops only the cancelled event token");
+  reject(cancelCheck, "GatewayAudibleSummary",
+         "GMT154 cancellation does not depend on other active alarms");
+
+  require(audioHeader, "GatewayAudioScheduler _scheduler",
+          "GMT154 uses the shared event scheduler state");
+  reject(audioHeader, "_mergedPlaying",
+         "GMT154 does not retain a separate merged-playing flag");
+
   require(platform, "[env:gmt154-06]", "GMT154 target environment exists");
   const std::string env = sectionFrom(platform, "[env:gmt154-06]");
   const std::string sharedEnv = sectionFrom(platform, "[gmt154_env_data]");

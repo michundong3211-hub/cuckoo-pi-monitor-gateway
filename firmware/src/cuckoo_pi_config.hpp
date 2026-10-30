@@ -8,7 +8,8 @@
 
 constexpr size_t kMaxCuckooPiDevices = 8;
 constexpr const char* kDefaultCuckooPiBroker = "";
-constexpr uint16_t kDefaultCuckooPiPort = 1884;
+constexpr uint16_t kDefaultCuckooPiPort = 0;
+constexpr uint16_t kPreviousDefaultCuckooPiPort = 1884;
 constexpr uint16_t kLegacyDefaultCuckooPiPort = 2884;
 constexpr const char* kDefaultCuckooPiClientId = "";
 constexpr const char* kDefaultCuckooPiUsername = "";

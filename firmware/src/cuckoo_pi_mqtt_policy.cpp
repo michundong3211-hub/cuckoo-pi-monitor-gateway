@@ -10,6 +10,10 @@ uint32_t cuckooPiReconnectDelayMs(uint8_t failure_count) {
   return delays[index];
 }
 
+bool cuckooPiHasMqttEndpoint(const CuckooPiConfig& config) {
+  return config.broker[0] != '\0' && config.port != 0;
+}
+
 bool cuckooPiShouldConnect(bool enabled, bool wifi_connected,
                            uint8_t device_count, uint32_t now_ms,
                            uint32_t next_attempt_ms) {

@@ -6,6 +6,7 @@
 #include <cstdint>
 
 uint32_t cuckooPiReconnectDelayMs(uint8_t failure_count);
+bool cuckooPiHasMqttEndpoint(const CuckooPiConfig& config);
 bool cuckooPiShouldConnect(bool enabled, bool wifi_connected,
                            uint8_t device_count, uint32_t now_ms,
                            uint32_t next_attempt_ms);

@@ -3,7 +3,8 @@ const DEVICE_ID_PATTERN = /^[0-9a-f]{12}$/
 export const MAX_CUCKOO_PI_DEVICES = 8
 
 const DEFAULT_CUCKOO_PI_BROKER = ''
-const DEFAULT_CUCKOO_PI_PORT = 1884
+const DEFAULT_CUCKOO_PI_PORT = 0
+const PREVIOUS_DEFAULT_CUCKOO_PI_PORT = 1884
 const LEGACY_DEFAULT_CUCKOO_PI_PORT = 2884
 const DEFAULT_CUCKOO_PI_CLIENT_ID = ''
 const DEFAULT_CUCKOO_PI_USERNAME = ''
@@ -61,7 +62,10 @@ export function normalizeCuckooPiConfig(value) {
       ? source.broker.trim()
       : DEFAULT_CUCKOO_PI_BROKER
   let port = Number.isInteger(Number(source.port)) ? Number(source.port) : DEFAULT_CUCKOO_PI_PORT
-  if (broker === DEFAULT_CUCKOO_PI_BROKER && port === LEGACY_DEFAULT_CUCKOO_PI_PORT) {
+  if (
+    broker === DEFAULT_CUCKOO_PI_BROKER &&
+    (port === PREVIOUS_DEFAULT_CUCKOO_PI_PORT || port === LEGACY_DEFAULT_CUCKOO_PI_PORT)
+  ) {
     port = DEFAULT_CUCKOO_PI_PORT
   }
   const result = {

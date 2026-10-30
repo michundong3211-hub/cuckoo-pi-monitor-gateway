@@ -99,7 +99,8 @@ void CuckooPiMqttService::tick(uint32_t now_ms, bool wifi_connected) {
   diagnostics = diagnostics_;
   unlock();
 
-  if (!config.enabled || !wifi_connected || config.device_count == 0) {
+  if (!config.enabled || !wifi_connected || config.device_count == 0 ||
+      !cuckooPiHasMqttEndpoint(config)) {
     if (client_.connected()) client_.disconnect();
     lock();
     diagnostics_.connected = false;

@@ -19,7 +19,7 @@ int main() {
   const CuckooPiConfig defaults = defaultCuckooPiConfig();
   assert(defaults.enabled);
   assert(std::strcmp(defaults.broker, "") == 0);
-  assert(defaults.port == 1884);
+  assert(defaults.port == 0);
   assert(std::strcmp(defaults.client_id, "") == 0);
   assert(std::strcmp(defaults.username, "") == 0);
   assert(defaults.password[0] == '\0');
@@ -57,7 +57,7 @@ int main() {
                              &missing));
   assert(missing.enabled);
   assert(std::strcmp(missing.broker, "") == 0);
-  assert(missing.port == 1884);
+  assert(missing.port == 0);
   assert(std::strcmp(missing.client_id, "") == 0);
   assert(std::strcmp(missing.username, "") == 0);
   assert(std::strcmp(missing.password, "") == 0);
@@ -138,7 +138,7 @@ int main() {
           R"json({"broker":"","port":2884,"client_id":"","username":"","password":""})json",
           &legacy_default_port_doc),
       &legacy_default_port));
-  assert(legacy_default_port.port == 1884);
+  assert(legacy_default_port.port == 0);
   assert(std::strcmp(legacy_default_port.client_id,
                      "") == 0);
   assert(std::strcmp(legacy_default_port.username,
@@ -158,6 +158,14 @@ int main() {
   assert(custom_missing_auth.client_id[0] == '\0');
   assert(custom_missing_auth.username[0] == '\0');
   assert(custom_missing_auth.password[0] == '\0');
+
+  JsonDocument configured_1884_doc;
+  CuckooPiConfig configured_1884{};
+  assert(parseCuckooPiConfig(
+      parseVariant(R"json({"broker":"broker.example","port":1884})json",
+                   &configured_1884_doc),
+      &configured_1884));
+  assert(configured_1884.port == 1884);
 
   JsonDocument explicit_empty_auth_doc;
   CuckooPiConfig explicit_empty_auth{};
@@ -263,7 +271,7 @@ int main() {
       parseVariant(invalid_transport_json, &invalid_transport_doc),
       &transport));
   assert(std::strcmp(transport.broker, "") == 0);
-  assert(transport.port == 1884);
+  assert(transport.port == 0);
   assert(std::strcmp(transport.client_id, "") == 0);
   assert(std::strcmp(transport.username, "") == 0);
   assert(transport.password[0] == '\0');

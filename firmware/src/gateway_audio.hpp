@@ -149,9 +149,6 @@ class GatewayAudioPlaybackSink {
 
 GatewayAudioPlaybackStepResult gatewayAudioPlayTone(
     const GatewayAudioQueueItem& item, GatewayAudioPlaybackSink* sink);
-GatewayAudioPlaybackStepResult gatewayAudioPlayMergedWindow(
-    const GatewayAudioQueueItem& item, GatewayAudioPlaybackSink* sink,
-    uint32_t (*nowMs)());
 
 int16_t gatewayAudioPcmSample(float normalizedSample, float amplitudeScale);
 
@@ -278,9 +275,6 @@ class GatewayAudio {
   bool _started = false;
   bool _available = false;
   GatewayAudioScheduler _scheduler;
-#if defined(GMT154_06) && defined(ENABLE_GATEWAY_AUDIO) && defined(ARDUINO_ARCH_ESP32)
-  std::atomic<bool> _mergedPlaying{false};
-#endif
 
 #if defined(ENABLE_GATEWAY_AUDIO) && defined(ARDUINO_ARCH_ESP32)
   TaskHandle_t _task = nullptr;
@@ -298,9 +292,6 @@ class GatewayAudio {
   static void audioTaskEntry(void* parameter);
   void audioTaskLoop();
   void playTone(const GatewayAudioQueueItem& item);
-#if defined(GMT154_06)
-  GatewayAudioPlaybackStepResult playMergedTone(const GatewayAudioQueueItem& item);
-#endif
   GatewayAudioPlaybackStepResult playSingleTone(
       const GatewayAudioQueueItem& item, uint16_t frequencyHz,
       uint16_t durationMs);

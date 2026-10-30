@@ -19,6 +19,17 @@ int main() {
   assert(!cuckooPiShouldConnect(true, true, 1, 0xfffffff0U, 16U));
   assert(cuckooPiShouldConnect(true, true, 1, 16U, 16U));
 
+  CuckooPiConfig no_endpoint = defaultCuckooPiConfig();
+  no_endpoint.device_count = 1;
+  no_endpoint.devices[0] = defaultCuckooPiDeviceConfig("001122334455");
+  assert(!cuckooPiHasMqttEndpoint(no_endpoint));
+  no_endpoint.port = 1884;
+  assert(!cuckooPiHasMqttEndpoint(no_endpoint));
+  std::strcpy(no_endpoint.broker, "broker.example");
+  assert(cuckooPiHasMqttEndpoint(no_endpoint));
+  no_endpoint.port = 0;
+  assert(!cuckooPiHasMqttEndpoint(no_endpoint));
+
   CuckooPiConfig first = defaultCuckooPiConfig();
   first.enabled = true;
   first.device_count = 1;

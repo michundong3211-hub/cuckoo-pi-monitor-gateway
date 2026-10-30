@@ -145,10 +145,12 @@ bool parseCuckooPiConfig(JsonVariantConst source, CuckooPiConfig* output) {
     if (port > 0 && port <= 65535U) parsed.port = static_cast<uint16_t>(port);
   }
 
-  const bool usesLegacyDefaultMqttServer =
-      std::strcmp(parsed.broker, kDefaultCuckooPiBroker) == 0 &&
+  const bool hasNoBroker = parsed.broker[0] == '\0';
+  const bool usesPreviousDefaultPort =
+      parsed.port == kPreviousDefaultCuckooPiPort ||
       parsed.port == kLegacyDefaultCuckooPiPort;
-  if (usesLegacyDefaultMqttServer) parsed.port = kDefaultCuckooPiPort;
+  if (hasNoBroker && usesPreviousDefaultPort)
+    parsed.port = kDefaultCuckooPiPort;
 
   if (!parseOptionalCredential(object, "client_id", parsed.client_id) ||
       !parseOptionalCredential(object, "username", parsed.username) ||
