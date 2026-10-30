@@ -14,6 +14,10 @@ The following are firmware targets, not a complete bill of materials. Display di
 | Waveshare 2.8 | Waveshare ESP32-S3 touch display board | ST7789, 240 × 320; CST3530 touch support | `gateway32s3wave-tft-sd` |
 | Waveshare 3.5 | Waveshare ESP32-S3-Touch-LCD-3.5, SKU 30733 | 320 × 480; FT6336 touch controller | `gateway35s3wave-tft-sd` |
 
+### 3D-printable housings
+
+The [Waveshare 2.8 and 3.5 housing project](hardware/waveshare-housing-2.8-3.5.3mf) is a Bambu Studio 3MF file containing two plates: **Waveshare 2.8 Imperial nut** and **Waveshare 3.5 Imperial nut**.
+
 ## Firmware
 
 Download the matching image from the [releases page](https://github.com/michundong3211-hub/cuckoo-pi-monitor-gateway/releases). Each file is an application image rather than a complete flash image. Before flashing, verify the board, flash layout and update method, and back up the device. Do not interchange images between targets.
