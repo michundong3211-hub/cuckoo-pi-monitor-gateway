@@ -1,27 +1,31 @@
 # Cuckoo Pi Monitor Gateway
 
-基于 [GravityMon Gateway](https://github.com/mp-se/gravitymon-gateway) 的二次开发版本，感谢 Magnus 和原项目贡献者。
+Cuckoo Pi Monitor Gateway is an ESP32-S3 based display gateway for monitoring fermentation devices. It builds on [GravityMon Gateway](https://github.com/mp-se/gravitymon-gateway); thanks to Magnus Persson and the upstream contributors.
 
-## 硬件目标
+The gateway displays hydrometer readings and Cuckoo Pi temperature-controller information, provides a web configuration interface, and supports audible and on-screen alarm indications. Cuckoo Pi monitoring uses MQTT to subscribe to device status; the gateway does not publish controller commands through this integration. MQTT connection details and device IDs are not preconfigured: enter them in the settings page.
 
-| 硬件 | PlatformIO 环境 |
-|---|---|
-| GMT1.56（工程名 GMT154-06） | `gmt154-06` |
-| Waveshare 2.8 | `gateway32s3wave-tft-sd` |
-| Waveshare 3.5 | `gateway35s3wave-tft-sd` |
+## Supported hardware
 
-固件为独立应用镜像，不是完整首刷包；三种板型不能交叉刷写。刷写前必须核对板型、Flash、分区、OTA 槽并备份。候选构建、刷写和实机功能验收分别确认，不应等同。
+The following are firmware targets, not a complete bill of materials. Display dimensions and controllers are the values configured in this project; verify the board revision before selecting firmware.
 
-## 构建
+| Target | Main hardware | Display configuration | PlatformIO environment |
+| --- | --- | --- | --- |
+| GMT1.56 (GMT154-06) | ESP32-S3 N16R8 | ST7789, 240 × 240 | `gmt154-06` |
+| Waveshare 2.8 | Waveshare ESP32-S3 touch display board | ST7789, 240 × 320; CST3530 touch support | `gateway32s3wave-tft-sd` |
+| Waveshare 3.5 | Waveshare ESP32-S3-Touch-LCD-3.5, SKU 30733 | 320 × 480; FT6336 touch controller | `gateway35s3wave-tft-sd` |
 
-在 `web-ui` 运行 `npm ci` 和 `npm run build`，将 `dist/assets/index.js.gz` 与 `style.css.gz` 复制为 `firmware/html/app.js.gz` 和 `app.css.gz`。在 `firmware` 使用 PlatformIO 对上述环境分别执行 `pio run -e <环境名>`。
+## Firmware
 
-## 版权与许可
+Download the matching image from the [releases page](https://github.com/michundong3211-hub/cuckoo-pi-monitor-gateway/releases). Each file is an application image rather than a complete flash image. Before flashing, verify the board, flash layout and update method, and back up the device. Do not interchange images between targets.
 
-原项目来源见上游链接。固件目录保留 `firmware/LICENSE`（MIT 及原作者版权），网页目录保留 `web-ui/LICENSE`（GPLv3）。第三方依赖和字体另有许可，尚须逐项核对；这份仓库不能整体概括为 MIT。
+## Build
 
-## 验证状态
+In `web-ui`, run `npm ci` and `npm run build`, then copy `dist/assets/index.js.gz` and `style.css.gz` to `firmware/html/app.js.gz` and `app.css.gz`. In `firmware`, build the desired environment with `pio run -e <environment>`.
 
-当前为发布准备候选。用户报告实机测试一切正常；主机测试及镜像校验结果见 [发布说明](RELEASE_NOTES.md)。
+## Verification
 
-Cuckoo Pi MQTT 默认服务器、端口、客户端 ID、用户名、密码和设备 ID 均为空。使用时请在设置页填写所需连接信息和设备 ID。
+The user reported successful device testing. The test firmware build and host test results are recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md); that report does not establish separate acceptance of every feature.
+
+## Copyright and licenses
+
+This project is derived from GravityMon Gateway. `firmware/LICENSE` retains the historical MIT license and copyright notice; `web-ui/LICENSE` is GPLv3. Third-party components and fonts have their own licenses and some provenance and distribution requirements remain under review. This repository must not be described as wholly MIT licensed. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
