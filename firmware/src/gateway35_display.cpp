@@ -8,6 +8,8 @@
 #include "gateway35_board_io.hpp"
 #include "gateway35_touch.hpp"
 #include "waveshare_35_profile.hpp"
+#include "psram_budget.hpp"
+#include <esp_heap_caps.h>
 
 namespace gateway35 {
 namespace {
@@ -35,16 +37,23 @@ bool Gateway35DisplayAdapter::begin() {
   return _ready;
 }
 
-lv_display_t* Gateway35DisplayAdapter::createLvglDisplay() {
+lv_display_t* Gateway35DisplayAdapter::createLvglDisplay(void (*onBufferAllocated)(size_t)) {
   if (!_ready) return nullptr;
   if (_display != nullptr) return _display;
 
-  _drawBufferBytes = kDisplayWidth * kDisplayHeight / 10 * 2;
-  _drawBuffer = static_cast<uint8_t*>(ps_malloc(_drawBufferBytes));
+  _drawBufferBytes = kDisplayWidth * kDisplayHeight / 5 * 2;
+  auto allocate_draw = [](size_t bytes) -> uint8_t* {
+    const size_t caps=MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT;
+    if(!psram_budget::allows(heap_caps_get_total_size(caps),heap_caps_get_free_size(caps),heap_caps_get_largest_free_block(caps),bytes)) return nullptr;
+    return static_cast<uint8_t*>(ps_malloc(bytes));
+  };
+  _drawBuffer = allocate_draw(_drawBufferBytes);
+  if (!_drawBuffer) { _drawBufferBytes /= 2; _drawBuffer = allocate_draw(_drawBufferBytes); }
   if (_drawBuffer == nullptr) {
     _drawBufferBytes = 0;
     return nullptr;
   }
+  if (onBufferAllocated) onBufferAllocated(_drawBufferBytes);
   _display = lv_display_create(kDisplayWidth, kDisplayHeight);
   if (_display == nullptr) {
     free(_drawBuffer);

@@ -1,7 +1,7 @@
 export const ALARM_RING_COLORS = Object.freeze([
   { label: 'Yellow', value: 0, hex: '#FFD700' },
   { label: 'Purple', value: 1, hex: '#61026F' },
-  { label: 'Red', value: 2, hex: '#FF4500' },
+  { label: 'Red', value: 2, hex: '#FF0000' },
   { label: 'Green', value: 3, hex: '#07A73E' },
   { label: 'Blue', value: 4, hex: '#1E90FF' },
   { label: 'White', value: 5, hex: '#D5D1CF' },

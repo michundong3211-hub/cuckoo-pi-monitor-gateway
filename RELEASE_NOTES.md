@@ -1,15 +1,11 @@
-# Test firmware release (2026-10-30)
+# v0.2.0-test
 
-This project is based on [GravityMon Gateway](https://github.com/mp-se/gravitymon-gateway). Select the application image for your exact board and verify its flash layout and update method before installing.
+This prerelease provides diagnostic application images for GMT1.56, Waveshare 2.8 and Waveshare 3.5. Select the matching board image and verify the update method and flash layout before installation.
 
-| Hardware | Firmware file | SHA-256 |
-| --- | --- | --- |
-| GMT1.56 | `cuckoo-pi-gateway-gmt156.bin` | `A6AF07638BD8A8DC55C3DB6A964DE2FDF3FD71BD6BEEEDE581748A9E91A5CB02` |
-| Waveshare 2.8 | `cuckoo-pi-gateway-waveshare28.bin` | `F60554166274AA8D490FD0DF99BE897FB9B8BB069F7C0CE607284403CF8B8B0E` |
-| Waveshare 3.5 | `cuckoo-pi-gateway-waveshare35.bin` | `82440F9B434626C1434F1C235416449B656B52BC93EBFB162BFA028A5A935611` |
+The candidate introduces PSRAM-backed LVGL pools and display buffers, corrects PSRAM alignment handling, improves settings page layout and timing, and updates the red ring color. Cuckoo Pi MQTT broker, port, username, password and device ID are not preconfigured.
 
-All three targets built successfully and passed image validation. The user reported that device testing was successful. Targeted MQTT web tests passed 27/27; host tests passed 67/74, with remaining failures involving existing UI assertions and C3 test dependencies. These results do not represent separate acceptance of every feature.
+The 3.5 settings screen was reported to respond much better with a prior candidate. The rebuilt release images, and the latest 2.8 and GMT1.56 candidates, still require independent hardware validation. A successful build or image integrity check does not establish device stability, touch, audio, network, alarm, or storage acceptance.
 
-Cuckoo Pi MQTT connection details are blank by default and must be configured by the user. GMT1.56 uses the same per-device alarm sound scheduling as the Waveshare targets.
+The images expose an unauthenticated, read-only settings diagnostic endpoint containing runtime and memory statistics. Use them on a trusted network. These are test images, not a stable release.
 
-Some third-party provenance and license questions remain unresolved; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+This project builds on [GravityMon Gateway](https://github.com/mp-se/gravitymon-gateway). Third-party component notices and unresolved provenance questions are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

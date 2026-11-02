@@ -28,7 +28,7 @@ In `web-ui`, run `npm ci` and `npm run build`, then copy `dist/assets/index.js.g
 
 ## Verification
 
-The user reported successful device testing. The test firmware build and host test results are recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md); that report does not establish separate acceptance of every feature.
+The user reported improved settings-page responsiveness on an earlier Waveshare 3.5 candidate. The three images rebuilt for this release, including Waveshare 2.8 and GMT1.56, still require independent hardware validation. Build and verification details are recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## Copyright and licenses
 

@@ -8,6 +8,9 @@
 #include <TFT_eSPI.h>
 #include <esp_heap_caps.h>
 #include <lvgl.h>
+#if !defined(GMT154_06_C3)
+#include "psram_budget.hpp"
+#endif
 
 namespace gmt154_display {
 
@@ -32,16 +35,19 @@ inline BufferAllocation allocateDrawBuffer(size_t bytes) {
     return {buffer, BufferSource::Internal, bytes};
   }
 #else
-  void* buffer = ps_malloc(bytes);
-  if (buffer != nullptr) {
-    return {buffer, BufferSource::Psram, bytes};
-  }
-
+  auto allocate_psram = [](size_t n) -> void* {
+    const size_t caps=MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT;
+    if(!psram_budget::allows(heap_caps_get_total_size(caps),heap_caps_get_free_size(caps),heap_caps_get_largest_free_block(caps),n)) return nullptr;
+    return ps_malloc(n);
+  };
+  void* buffer = allocate_psram(bytes);
+  if (buffer != nullptr) return {buffer, BufferSource::Psram, bytes};
   bytes /= 2;
+  buffer = allocate_psram(bytes);
+  if (buffer != nullptr) return {buffer, BufferSource::Psram, bytes};
+  if (bytes > 5760U) bytes = 5760U;
   buffer = heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-  if (buffer != nullptr) {
-    return {buffer, BufferSource::Internal, bytes};
-  }
+  if (buffer != nullptr) return {buffer, BufferSource::Internal, bytes};
 #endif
 
   return {nullptr, BufferSource::None, 0};

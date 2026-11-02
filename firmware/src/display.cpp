@@ -25,6 +25,11 @@ SOFTWARE.
 
 #include <cstdio>
 #include <cstdlib>
+#include "settings_freeze_diag_events.hpp"
+#if (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GATEWAY_35) && !defined(GMT154_06)) || defined(GATEWAY_35) || (defined(GMT154_06) && !defined(GMT154_06_C3))
+#include "psram_lvgl_pool.hpp"
+#include <esp_heap_caps.h>
+#endif
 #include <display.hpp>
 
 #if defined(ENABLE_TFT)
@@ -57,6 +62,52 @@ SOFTWARE.
 #include <looptimer.hpp>
 #include <ui_gravitymon_gateway.hpp>
 #include <ui_helpers.hpp>
+
+#if (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GATEWAY_35) && !defined(GMT154_06)) || defined(GATEWAY_35) || (defined(GMT154_06) && !defined(GMT154_06_C3))
+namespace {
+struct LvglPsramBackend {
+  uint32_t internalFree() const { return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
+  uint32_t psramTotal() const { return heap_caps_get_total_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
+  uint32_t psramFree() const { return heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
+  uint32_t psramLargest() const { return heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
+  psram_lvgl::Monitor monitor() const { lv_mem_monitor_t m{}; lv_mem_monitor(&m); return {static_cast<uint32_t>(m.total_size),static_cast<uint32_t>(m.free_size),static_cast<uint32_t>(m.free_biggest_size)}; }
+  void* allocate(size_t n) const { return heap_caps_aligned_alloc(8, n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); }
+  void release(void* p) const { heap_caps_free(p); }
+  void* add(void* p, size_t n) const { return lv_mem_add_pool(p,n); }
+};
+// Never release a registered pool while LVGL is running.
+psram_lvgl::Context lvglPsramContext;
+// Probe before the pre-existing PSRAM display-buffer allocation so HTTP can
+// distinguish unavailable PSRAM even if that allocation causes UI setup to exit.
+void probeLvglPsramPool() {
+  LvglPsramBackend backend;
+  const auto m=backend.monitor();
+  auto& p=freeze_diag::state.pool;
+  p[1].store(psram_lvgl::kExtraBytes,std::memory_order_relaxed);
+  p[3].store(backend.internalFree(),std::memory_order_relaxed);
+  p[5].store(backend.psramTotal(),std::memory_order_relaxed);
+  p[6].store(backend.psramFree(),std::memory_order_relaxed);
+  p[7].store(backend.psramLargest(),std::memory_order_relaxed);
+  p[10].store(m.total,std::memory_order_relaxed);
+  p[11].store(m.free,std::memory_order_relaxed);
+  p[12].store(m.largest,std::memory_order_relaxed);
+  p[0].store(psram_lvgl::NotAttempted,std::memory_order_release);
+}
+void initializeLvglPsramPool() {
+  LvglPsramBackend backend;
+  psram_lvgl::initialize(lvglPsramContext, backend);
+  const auto& s=lvglPsramContext.snapshot;
+  const uint32_t values[freeze_diag::PoolFieldCount] = {
+    s.status,s.requested,s.status==psram_lvgl::Registered?s.requested:0U,
+    s.internalBefore,s.internalAfter,s.psramTotal,s.psramBefore,s.psramLargestBefore,
+    s.psramAfter,s.psramLargestAfter,s.lvBefore.total,s.lvBefore.free,s.lvBefore.largest,
+    s.lvAfter.total,s.lvAfter.free,s.lvAfter.largest};
+  for(unsigned i=1;i<freeze_diag::PoolFieldCount;++i)
+    freeze_diag::state.pool[i].store(values[i],std::memory_order_relaxed);
+  freeze_diag::state.pool[0].store(values[0],std::memory_order_release);
+}
+}
+#endif
 
 TaskHandle_t lvglTaskHandler;
 #if !defined(GATEWAY_35)
@@ -336,11 +387,17 @@ void Display::createUI(uint8_t layoutId) {
   }
   lv_init();
   lv_log_register_print_cb(log_print);
-  _display = _gateway35->createLvglDisplay();
+  probeLvglPsramPool();
+  _display = _gateway35->createLvglDisplay([](size_t bytes) {
+    freeze_diag::state.drawBufferBytes.store(bytes, std::memory_order_relaxed);
+    freeze_diag::state.drawSource.store(1, std::memory_order_relaxed);
+    initializeLvglPsramPool();
+  });
   if (_display == nullptr) {
     Log.error(F("DISP: Failed to create Waveshare 3.5 LVGL display." CR));
     return;
   }
+  lv_display_add_event_cb(_display, [](lv_event_t* e) { freeze_diag::recordDisplayEvent(lv_event_get_code(e)); }, LV_EVENT_ALL, nullptr);
   if (!applyDisplayRotation(_orientation)) {
     Log.error(F("DISP: Failed to apply Waveshare 3.5 display rotation." CR));
     return;
@@ -378,14 +435,32 @@ void Display::createUI(uint8_t layoutId) {
              lv_version_minor(), lv_version_patch());
 
   lv_init();
+#if (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GATEWAY_35) && !defined(GMT154_06)) || (defined(GMT154_06) && !defined(GMT154_06_C3))
+  probeLvglPsramPool();
+#endif
   lv_log_register_print_cb(log_print);
 
+#if (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GATEWAY_35) && !defined(GMT154_06)) || (defined(GMT154_06) && !defined(GMT154_06_C3))
+#define DRAW_BUF_SIZE (TFT_WIDTH * TFT_HEIGHT / 5 * (LV_COLOR_DEPTH / 8))
+#else
 #define DRAW_BUF_SIZE (TFT_WIDTH * TFT_HEIGHT / 10 * (LV_COLOR_DEPTH / 8))
+#endif
 
 #if defined(GMT154_06)
   void *draw_buf = nullptr;
 #else
-  void *draw_buf = ps_malloc(DRAW_BUF_SIZE);
+  size_t draw_buf_bytes = DRAW_BUF_SIZE;
+#if defined(ARDUINO_WAVESHARE_S3_TFT)
+  auto allocate_draw = [](size_t bytes) -> void* {
+    const size_t caps=MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT;
+    if(!psram_budget::allows(heap_caps_get_total_size(caps),heap_caps_get_free_size(caps),heap_caps_get_largest_free_block(caps),bytes)) return nullptr;
+    return ps_malloc(bytes);
+  };
+  void *draw_buf = allocate_draw(draw_buf_bytes);
+  if (!draw_buf) { draw_buf_bytes /= 2; draw_buf = allocate_draw(draw_buf_bytes); }
+#else
+  void* draw_buf = ps_malloc(draw_buf_bytes);
+#endif
 #endif
 
 #if defined(GMT154_06) && !defined(GMT154_06_C3)
@@ -426,6 +501,9 @@ void Display::createUI(uint8_t layoutId) {
              gmt154_display::bufferSourceName(allocation.source),
              allocation.bytes);
 #else
+  freeze_diag::state.drawBufferBytes.store(draw_buf ? draw_buf_bytes : 0,
+                                           std::memory_order_release);
+  freeze_diag::state.drawSource.store(draw_buf ? 1 : 0, std::memory_order_release);
   if (!draw_buf) {
     Log.error(
         F("DISP: Failed to allocate ps ram for display buffer, size=%d" CR),
@@ -434,10 +512,20 @@ void Display::createUI(uint8_t layoutId) {
   }
 #endif
 
+#if (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GATEWAY_35) && !defined(GMT154_06)) || (defined(GMT154_06) && !defined(GMT154_06_C3))
+#if defined(GMT154_06)
+  freeze_diag::state.drawBufferBytes.store(allocation.bytes, std::memory_order_release);
+  freeze_diag::state.drawSource.store(allocation.source == gmt154_display::BufferSource::Psram ? 1 : 2, std::memory_order_release);
+#endif
+  // Preserve the existing display-buffer allocation first. Register the
+  // optional PSRAM pool before any LVGL display/input objects or UI task.
+  initializeLvglPsramPool();
+#endif
+
 #if defined(GMT154_06)
   _display = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
 #else
-  _display = lv_tft_espi_create(TFT_WIDTH, TFT_HEIGHT, draw_buf, DRAW_BUF_SIZE);
+  _display = lv_tft_espi_create(TFT_WIDTH, TFT_HEIGHT, draw_buf, draw_buf_bytes);
 #endif
   if (_display == nullptr) {
     Log.error(F("DIAG: DISP LVGL display object creation failed." CR));
@@ -456,6 +544,8 @@ void Display::createUI(uint8_t layoutId) {
   lv_display_add_event_cb(_display, gmt154DisplayDiagnosticEventHandler,
                           LV_EVENT_FLUSH_FINISH, nullptr);
 #endif
+
+  lv_display_add_event_cb(_display, [](lv_event_t* e) { freeze_diag::recordDisplayEvent(lv_event_get_code(e)); }, LV_EVENT_ALL, nullptr);
 
   lv_display_set_rotation(
       _display,
@@ -949,6 +1039,7 @@ bool Display::getTouch(uint16_t *x, uint16_t *y) {
 // **************************************************************************************************
 
 void touchScreenHandler(lv_indev_t *indev, lv_indev_data_t *data) {
+  freeze_diag::Scope diagnostic(freeze_diag::Touch);
   (void)indev;
   uint16_t x = 0, y = 0;
 #if defined(GATEWAY_35) && GATEWAY_TOUCH_DIAGNOSTICS
@@ -1085,11 +1176,20 @@ void lvgl_loop_handler(void *parameter) {
   gmt154::LvglBudgetSampler lvglBudgetSampler;
 #endif
 
+  #if defined(GATEWAY_35) || (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GMT154_06)) || (defined(GMT154_06) && !defined(GMT154_06_C3))
+  uint32_t previous_tick_ms = millis();
+  #endif
   for (;;) {
 #if defined(GMT154_06_C3)
     gmt154::LvglBudgetSnapshot lvglBudgetSnapshot;
 #endif
+#if defined(GATEWAY_35) || (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GMT154_06)) || (defined(GMT154_06) && !defined(GMT154_06_C3))
+    const uint32_t current_tick_ms = millis();
+    lv_tick_inc(current_tick_ms - previous_tick_ms);
+    previous_tick_ms = current_tick_ms;
+#else
     lv_tick_inc(10);
+#endif
     SemaphoreHandle_t semaphore = myDisplay.getUISemaphore();
 #if defined(GMT154_06)
     const bool semaphore_acquired =
@@ -1107,8 +1207,17 @@ void lvgl_loop_handler(void *parameter) {
 #endif
     {
       if (taskLoop.hasExpired()) {
+#if (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GMT154_06_C3)) || (defined(GMT154_06) && !defined(GMT154_06_C3)) || defined(GATEWAY_35)
+        const size_t caps=MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT;
+        lv_mem_monitor_t monitor{}; lv_mem_monitor(&monitor);
+        freeze_diag::state.runtime[0].store(heap_caps_get_free_size(caps),std::memory_order_relaxed);
+        freeze_diag::state.runtime[1].store(heap_caps_get_largest_free_block(caps),std::memory_order_relaxed);
+        freeze_diag::state.runtime[2].store(monitor.free_size,std::memory_order_relaxed);
+        freeze_diag::state.runtime[3].store(monitor.free_biggest_size,std::memory_order_relaxed);
+        freeze_diag::state.runtime[4].store(millis(),std::memory_order_release);
+#endif
         taskLoop.reset();
-        gravitymon_gateway_loop();
+        { freeze_diag::Scope diagnostic(freeze_diag::Gateway); gravitymon_gateway_loop(); }
       }
 
       // LVGL reads and dispatches pointer input while rotation is excluded.
@@ -1121,7 +1230,7 @@ void lvgl_loop_handler(void *parameter) {
                    gmt154FirstFrameElapsedMs(now_ms));
       }
 #endif
-      lv_task_handler();
+      { freeze_diag::Scope diagnostic(freeze_diag::Handler); lv_task_handler(); }
 #if defined(GMT154_06)
       if (!gmt154FirstFrameDiagnostics.handler_end_logged) {
         gmt154FirstFrameDiagnostics.handler_end_logged = true;

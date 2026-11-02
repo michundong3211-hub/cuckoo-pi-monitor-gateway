@@ -17,7 +17,7 @@ class Gateway35DisplayAdapter {
   ~Gateway35DisplayAdapter();
 
   bool begin();
-  lv_display_t* createLvglDisplay();
+  lv_display_t* createLvglDisplay(void (*onBufferAllocated)(size_t) = nullptr);
   bool setRotation(uint8_t rotation);
   void clear(uint16_t rgb565);
   void setFontPixels(uint8_t pixels);

@@ -9,7 +9,7 @@ constexpr uint8_t RING_COLOR_DEFAULT_INDEX = RING_COLOR_COUNT;
 constexpr uint8_t RING_COLOR_OPTION_COUNT = RING_COLOR_COUNT + 1;
 constexpr uint32_t RING_COLOR_DEFAULT_HEX = 0x45D9B2;
 constexpr uint32_t RING_COLOR_HEX[RING_COLOR_COUNT] = {
-    0xFFD700, 0x61026F, 0xFF4500, 0x07A73E,
+    0xFFD700, 0x61026F, 0xFF0000, 0x07A73E,
     0x1E90FF, 0xD5D1CF, 0x000000};
 
 constexpr uint8_t normalize_ring_color_index(int index) {

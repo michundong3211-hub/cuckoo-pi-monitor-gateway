@@ -36,12 +36,14 @@ SOFTWARE.
 #include <cuckoo_pi_mqtt.hpp>
 #include <gmt154_cuckoo_temperature_policy.hpp>
 #include <gateway_alarm_lifecycle.hpp>
+#include "settings_freeze_diag.hpp"
 #include "gmt154_offline_frame.hpp"
 #include <gateway_alert_state.hpp>
 #include <gateway_display_cycle.hpp>
 #include <gateway_audio.hpp>
 #include <gateway_rotation_teardown.hpp>
 #include <gateway_settings_layout.hpp>
+#include "gravity_settings_compact_label.hpp"
 #include <gateway_settings_state.hpp>
 #include <gateway_settings_thread_state.hpp>
 #include <gateway_ui_style.hpp>
@@ -1619,7 +1621,25 @@ static bool enter_settings_page(SettingsPage page) {
   return g_state.settings_ui.enterPage(page, latest);
 }
 
+// Called only by the LVGL task while it owns the UI semaphore.
+static void freeze_diag_sample_memory(freeze_diag::MemorySlot slot) {
+  lv_mem_monitor_t monitor{};
+  lv_mem_monitor(&monitor);
+  auto& target=freeze_diag::state.memory[slot];
+  target.free.store(monitor.free_size, std::memory_order_relaxed);
+  target.largest.store(monitor.free_biggest_size, std::memory_order_relaxed);
+  target.sampled.store(millis(), std::memory_order_relaxed);
+}
+struct FreezeDiagMemoryScope {
+  freeze_diag::MemorySlot exit_slot;
+  FreezeDiagMemoryScope(freeze_diag::MemorySlot enter_slot, freeze_diag::MemorySlot exit_value):exit_slot(exit_value) { freeze_diag_sample_memory(enter_slot); }
+  ~FreezeDiagMemoryScope() { freeze_diag_sample_memory(exit_slot); }
+};
+
 static void apply_settings_action(SettingsAction action) {
+  freeze_diag::state.lastAction.store(static_cast<uint32_t>(action), std::memory_order_relaxed);
+  freeze_diag::Scope diagnostic(freeze_diag::Action);
+  FreezeDiagMemoryScope diagnostic_memory(freeze_diag::ActionEnter, freeze_diag::ActionExit);
   switch (action) {
     case SettingsAction::HomeOg:
       enter_settings_page(SettingsPage::Og);
@@ -2501,12 +2521,54 @@ struct CuckooSettingsLayout {
   GatewaySettingsRect save;
 };
 
+static bool cuckoo_settings_compact_28() {
+#if defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GATEWAY_35) && !defined(GMT154_06)
+  return layout_2_screen_width() <= 320 && layout_2_screen_height() <= 320;
+#else
+  return false;
+#endif
+}
+
 static CuckooSettingsLayout calculate_cuckoo_settings_layout() {
   const int16_t width = static_cast<int16_t>(layout_2_screen_width());
   const int16_t height = static_cast<int16_t>(layout_2_screen_height());
   const bool portrait = height > width;
   CuckooSettingsLayout layout{};
   layout.screen = {0, 0, width, height};
+  if (cuckoo_settings_compact_28()) {
+    const int16_t header = 30;
+    const int16_t row = portrait ? 36 : 31;
+    const int16_t y0 = header + 3;
+    const int16_t margin = 6;
+    const int16_t hint = portrait ? 69 : 92;
+    const int16_t button = 32;
+    const int16_t minus_x = margin + hint;
+    const int16_t plus_x = width - margin - button;
+    const int16_t value_x = minus_x + button + 2;
+    const int16_t value_w = plus_x - value_x - 2;
+    layout.header = {0, 0, width, header};
+    layout.title = {4, 1, static_cast<int16_t>(width - 110), 27};
+    layout.device = {static_cast<int16_t>(width - 104), 1, 100, 27};
+    layout.offline_toggle = {margin, y0, static_cast<int16_t>(width - 2 * margin), 28};
+    layout.offline_hint = {margin, static_cast<int16_t>(y0 + row), hint, 28};
+    layout.offline_minus = {minus_x, static_cast<int16_t>(y0 + row), button, 28};
+    layout.offline_value = {value_x, static_cast<int16_t>(y0 + row), value_w, 28};
+    layout.offline_plus = {plus_x, static_cast<int16_t>(y0 + row), button, 28};
+    layout.beer_toggle = {margin, static_cast<int16_t>(y0 + 2 * row), static_cast<int16_t>(width - 2 * margin), 28};
+    layout.beer_hint = {margin, static_cast<int16_t>(y0 + 3 * row), hint, 28};
+    layout.beer_minus = {minus_x, static_cast<int16_t>(y0 + 3 * row), button, 28};
+    layout.beer_value = {value_x, static_cast<int16_t>(y0 + 3 * row), value_w, 28};
+    layout.beer_plus = {plus_x, static_cast<int16_t>(y0 + 3 * row), button, 28};
+    layout.hold_hint = {margin, static_cast<int16_t>(y0 + 4 * row), hint, 28};
+    layout.hold_minus = {minus_x, static_cast<int16_t>(y0 + 4 * row), button, 28};
+    layout.hold_value = {value_x, static_cast<int16_t>(y0 + 4 * row), value_w, 28};
+    layout.hold_plus = {plus_x, static_cast<int16_t>(y0 + 4 * row), button, 28};
+    const int16_t footer_y = height - 34;
+    const int16_t footer_w = (width - 3 * margin) / 2;
+    layout.back = {margin, footer_y, footer_w, 28};
+    layout.save = {static_cast<int16_t>(2 * margin + footer_w), footer_y, footer_w, 28};
+    return layout;
+  }
   if (portrait) {
     layout.header = {0, 0, width, 44};
     layout.title = {8, 3, 184, 36};
@@ -2545,6 +2607,15 @@ static CuckooSettingsLayout calculate_cuckoo_settings_layout() {
     layout.hold_value = {310, 216, 110, 32};
     layout.hold_minus = {246, 216, 56, 32};
     layout.hold_plus = {426, 216, 44, 32};
+#if defined(GATEWAY_35)
+    // Leave room for the complete maximum timeout (86400 SEC) at 20 px.
+    layout.offline_minus.x = 240;
+    layout.offline_value = {304, 84, 120, 32};
+    layout.beer_minus.x = 240;
+    layout.beer_value = {304, 168, 120, 32};
+    layout.hold_minus.x = 240;
+    layout.hold_value = {304, 216, 120, 32};
+#endif
     layout.back = {20, height - 48, 210, 40};
     layout.save = {250, height - 48, 210, 40};
   }
@@ -2586,7 +2657,7 @@ static lv_obj_t* create_cuckoo_settings_button(
   lv_obj_set_width(label, rect.width);
   lv_obj_set_height(label, LV_SIZE_CONTENT);
   style_layout_2_button(button, primary,
-                        layout_2_font(layout_2_style().settings_button_font));
+                        layout_2_font(cuckoo_settings_compact_28() ? 12 : layout_2_style().settings_button_font));
   lv_obj_center(label);
   return button;
 }
@@ -2821,13 +2892,18 @@ static void create_layout_2_dashboard_landscape(lv_obj_t* scr) {
       scr, "", header.index, lv_color_hex(0xF4F7F7),
       layout_2_font(style.dashboard_header_secondary_font));
 
-  create_layout_2_dashboard_arc(scr, 24, 40, 120);
+#if defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GATEWAY_35) && !defined(GMT154_06)
+  constexpr int32_t dashboard_content_y_offset = 8;
+#else
+  constexpr int32_t dashboard_content_y_offset = 0;
+#endif
+  create_layout_2_dashboard_arc(scr, 24, 40 + dashboard_content_y_offset, 120);
 
   g_state.lbl_progress = create_layout_2_label(
-      scr, "--", 40, 84, 90, 44, LV_TEXT_ALIGN_CENTER,
+      scr, "--", 40, 84 + dashboard_content_y_offset, 90, 44, LV_TEXT_ALIGN_CENTER,
       lv_color_hex(0x45D9B2), layout_2_font(style.dashboard_progress_font));
   g_state.lbl_measurement = create_layout_2_centered_label(
-      scr, "--", 156, 66, 152, 68,
+      scr, "--", 156, 66 + dashboard_content_y_offset, 152, 68,
       lv_color_hex(0xF4F7F7), layout_2_font(style.dashboard_measurement_font));
 #if defined(ARDUINO_WAVESHARE_S3_TFT) || defined(GATEWAY_35)
   g_state.lbl_measurement_unit = lv_label_create(lv_obj_get_parent(g_state.lbl_measurement));
@@ -3123,7 +3199,7 @@ static void create_settings_step_row(const GatewaySettingsLayout& layout,
                                      SettingsAction plus) {
   const GatewayUiStyle& style = layout_2_style();
   const GatewaySettingsRect& value = layout.value_fields[row];
-  create_settings_centered_label(
+  create_gravity_settings_compact_label(
       g_state.settings_panel, label, layout.row_hints[row],
       lv_color_hex(0x7E8F97),
       layout_2_font(style.settings_hint_font));
@@ -3131,7 +3207,7 @@ static void create_settings_step_row(const GatewaySettingsLayout& layout,
                          minus, false);
   create_settings_button(g_state.settings_panel, "+", layout.plus_buttons[row],
                          plus, false);
-  g_state.settings_value[row + 1] = create_settings_centered_label(
+  g_state.settings_value[row + 1] = create_gravity_settings_compact_label(
       g_state.settings_panel, "--", value, lv_color_hex(0xFFC247),
       layout_2_font(style.settings_value_font));
 }
@@ -3174,7 +3250,7 @@ static void create_settings_home(const GatewaySettingsLayout& layout) {
 }
 
 static void create_settings_og(const GatewaySettingsLayout& layout) {
-  create_settings_centered_label(
+  create_gravity_settings_compact_label(
       g_state.settings_panel, "1.000-1.200 SG / STEP 0.001", layout.og_hint,
       lv_color_hex(0x7E8F97),
       layout_2_font(layout_2_style().settings_hint_font));
@@ -3239,7 +3315,7 @@ static void create_settings_ring_color(const GatewaySettingsLayout& layout) {
     }, LV_EVENT_PRESS_LOST, nullptr);
     g_state.settings_ring_color[i] = swatch;
   }
-  g_state.settings_value[0] = create_settings_centered_label(
+  g_state.settings_value[0] = create_gravity_settings_compact_label(
       g_state.settings_panel, "BLE DEFAULT", layout.ring_summary,
       lv_color_hex(RING_COLOR_DEFAULT_HEX),
       layout_2_font(layout_2_style().settings_summary_font));
@@ -3322,6 +3398,8 @@ static void gravitymon_gateway_refresh_settings_page() {
 }
 
 static void gravitymon_gateway_rebuild_settings_page() {
+  freeze_diag::Scope diagnostic(freeze_diag::Rebuild);
+  FreezeDiagMemoryScope diagnostic_memory(freeze_diag::RebuildEnter, freeze_diag::RebuildExit);
   if (!g_state.settings_ui.isOpen()) {
     close_settings_overlay();
     return;
@@ -3509,19 +3587,34 @@ static void create_cuckoo_settings_shell(const CuckooSettingsLayout& layout) {
                         layout.header.height, lv_color_hex(0x0B1B24));
   g_state.settings_title = create_settings_centered_label(
       g_state.settings_panel, "CUCKOO SETTINGS", layout.title,
-      lv_color_hex(0x45D9B2), layout_2_font(style.settings_title_font));
-  create_settings_centered_label(
+      lv_color_hex(0x45D9B2), layout_2_font(cuckoo_settings_compact_28() ? 12 : style.settings_title_font));
+  lv_obj_t* device_label = create_settings_centered_label(
       g_state.settings_panel, g_state.cuckoo_settings_ui.deviceId(),
       layout.device, lv_color_hex(0xF4F7F7),
-      layout_2_font(style.settings_device_font));
+      layout_2_font(cuckoo_settings_compact_28() ? 12 : style.settings_device_font));
+  if (cuckoo_settings_compact_28()) {
+    lv_label_set_long_mode(device_label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_height(device_label, layout.device.height);
+    lv_obj_center(device_label);
+  }
   g_state.settings_error = create_settings_centered_label(
       g_state.settings_panel,
       g_state.cuckoo_settings_ui.saveError() ? "SAVE FAILED" : "",
-      {0, static_cast<int16_t>(layout.header.height - 14), layout.screen.width,
+      cuckoo_settings_compact_28() ? layout.title : GatewaySettingsRect{0, static_cast<int16_t>(layout.header.height - 14), layout.screen.width,
        12},
       lv_color_hex(0xFF5D62), layout_2_font(style.settings_error_font));
   create_layout_2_divider(g_state.settings_panel, 0,
                           layout.header.height - 1, layout.screen.width, 1);
+}
+
+static int cuckoo_settings_value_font() {
+#if defined(GATEWAY_35)
+  // The large-display 28 px font wraps even the default timeout. 20 px
+  // fits the full supported seconds range in both 3.5 orientations.
+  return 20;
+#else
+  return cuckoo_settings_compact_28() ? 12 : layout_2_style().settings_value_font;
+#endif
 }
 
 static void create_cuckoo_settings_page() {
@@ -3532,14 +3625,14 @@ static void create_cuckoo_settings_page() {
       CuckooSettingsAction::OfflineToggle);
   g_state.settings_value[0] = lv_obj_get_child(offline, 0);
   create_settings_centered_label(
-      g_state.settings_panel, "TIMEOUT SEC", layout.offline_hint,
-      lv_color_hex(0x7E8F97), layout_2_font(layout_2_style().settings_hint_font));
+      g_state.settings_panel, cuckoo_settings_compact_28() ? "TIMEOUT" : "TIMEOUT SEC", layout.offline_hint,
+      lv_color_hex(0x7E8F97), layout_2_font(cuckoo_settings_compact_28() ? 12 : layout_2_style().settings_hint_font));
   create_cuckoo_settings_button(g_state.settings_panel, "-",
                                 layout.offline_minus,
                                 CuckooSettingsAction::OfflineMinus);
   g_state.settings_value[1] = create_settings_centered_label(
       g_state.settings_panel, "--", layout.offline_value,
-      lv_color_hex(0xFFC247), layout_2_font(layout_2_style().settings_value_font));
+      lv_color_hex(0xFFC247), layout_2_font(cuckoo_settings_value_font()));
   create_cuckoo_settings_button(g_state.settings_panel, "+",
                                 layout.offline_plus,
                                 CuckooSettingsAction::OfflinePlus);
@@ -3549,24 +3642,24 @@ static void create_cuckoo_settings_page() {
       CuckooSettingsAction::BeerToggle);
   g_state.settings_value[2] = lv_obj_get_child(beer, 0);
   create_settings_centered_label(
-      g_state.settings_panel, "DEVIATION C", layout.beer_hint,
-      lv_color_hex(0x7E8F97), layout_2_font(layout_2_style().settings_hint_font));
+      g_state.settings_panel, cuckoo_settings_compact_28() ? "DEV. C" : "DEVIATION C", layout.beer_hint,
+      lv_color_hex(0x7E8F97), layout_2_font(cuckoo_settings_compact_28() ? 12 : layout_2_style().settings_hint_font));
   create_cuckoo_settings_button(g_state.settings_panel, "-", layout.beer_minus,
                                 CuckooSettingsAction::BeerThresholdMinus);
   g_state.settings_value[3] = create_settings_centered_label(
       g_state.settings_panel, "--", layout.beer_value,
-      lv_color_hex(0xFFC247), layout_2_font(layout_2_style().settings_value_font));
+      lv_color_hex(0xFFC247), layout_2_font(cuckoo_settings_value_font()));
   create_cuckoo_settings_button(g_state.settings_panel, "+", layout.beer_plus,
                                 CuckooSettingsAction::BeerThresholdPlus);
 
   create_settings_centered_label(
       g_state.settings_panel, "HOLD SEC", layout.hold_hint,
-      lv_color_hex(0x7E8F97), layout_2_font(layout_2_style().settings_hint_font));
+      lv_color_hex(0x7E8F97), layout_2_font(cuckoo_settings_compact_28() ? 12 : layout_2_style().settings_hint_font));
   create_cuckoo_settings_button(g_state.settings_panel, "-", layout.hold_minus,
                                 CuckooSettingsAction::BeerHoldMinus);
   g_state.settings_value[4] = create_settings_centered_label(
       g_state.settings_panel, "--", layout.hold_value,
-      lv_color_hex(0xFFC247), layout_2_font(layout_2_style().settings_value_font));
+      lv_color_hex(0xFFC247), layout_2_font(cuckoo_settings_value_font()));
   create_cuckoo_settings_button(g_state.settings_panel, "+", layout.hold_plus,
                                 CuckooSettingsAction::BeerHoldPlus);
   create_cuckoo_settings_button(g_state.settings_panel, "BACK", layout.back,
@@ -3581,16 +3674,28 @@ static bool persist_cuckoo_settings(
   return myConfig.saveCuckooPiDeviceSettings(settings);
 }
 
+// Avoid invalidating unchanged labels; text comparison occurs under the UI lock.
+static void cuckoo_set_text_if_changed(lv_obj_t* label, const char* text) {
+  const char* current = lv_label_get_text(label);
+  if (!current || strcmp(current, text) != 0) lv_label_set_text(label, text);
+}
+
 static void refresh_cuckoo_settings_page() {
   if (!g_state.cuckoo_settings_ui.isOpen()) return;
   const CuckooPiDeviceConfig& draft = g_state.cuckoo_settings_ui.draft();
+  if (cuckoo_settings_compact_28() && g_state.settings_title) {
+    if (g_state.cuckoo_settings_ui.saveError())
+      lv_obj_add_flag(g_state.settings_title, LV_OBJ_FLAG_HIDDEN);
+    else
+      lv_obj_clear_flag(g_state.settings_title, LV_OBJ_FLAG_HIDDEN);
+  }
   if (g_state.settings_error) {
-    lv_label_set_text(g_state.settings_error,
+    cuckoo_set_text_if_changed(g_state.settings_error,
                       g_state.cuckoo_settings_ui.saveError() ? "SAVE FAILED"
                                                              : "");
   }
   if (g_state.settings_value[0]) {
-    lv_label_set_text(g_state.settings_value[0],
+    cuckoo_set_text_if_changed(g_state.settings_value[0],
                       draft.offline_alarm_enabled ? "OFFLINE ALARM: ON"
                                                    : "OFFLINE ALARM: OFF");
   }
@@ -3598,10 +3703,10 @@ static void refresh_cuckoo_settings_page() {
     char value[24];
     snprintf(value, sizeof(value), "%lu SEC",
              static_cast<unsigned long>(draft.offline_timeout_seconds));
-    lv_label_set_text(g_state.settings_value[1], value);
+    cuckoo_set_text_if_changed(g_state.settings_value[1], value);
   }
   if (g_state.settings_value[2]) {
-    lv_label_set_text(g_state.settings_value[2],
+    cuckoo_set_text_if_changed(g_state.settings_value[2],
                       draft.beer_deviation_alarm_enabled ? "BEER ALARM: ON"
                                                          : "BEER ALARM: OFF");
   }
@@ -3609,17 +3714,19 @@ static void refresh_cuckoo_settings_page() {
     char value[24];
     snprintf(value, sizeof(value), "%.1f C",
              draft.beer_deviation_threshold_c);
-    lv_label_set_text(g_state.settings_value[3], value);
+    cuckoo_set_text_if_changed(g_state.settings_value[3], value);
   }
   if (g_state.settings_value[4]) {
     char value[24];
     snprintf(value, sizeof(value), "%lu SEC",
              static_cast<unsigned long>(draft.beer_deviation_hold_seconds));
-    lv_label_set_text(g_state.settings_value[4], value);
+    cuckoo_set_text_if_changed(g_state.settings_value[4], value);
   }
 }
 
 static void apply_cuckoo_settings_action(CuckooSettingsAction action) {
+  freeze_diag::state.cuckooLastAction.store(static_cast<uint32_t>(action), std::memory_order_relaxed);
+  freeze_diag::Scope diagnostic(freeze_diag::CuckooAction);
   switch (action) {
     case CuckooSettingsAction::OfflineToggle:
       g_state.cuckoo_settings_ui.toggleOfflineAlarm();
@@ -3661,6 +3768,7 @@ static void apply_cuckoo_settings_action(CuckooSettingsAction action) {
 }
 
 static void gravitymon_gateway_rebuild_cuckoo_settings_page() {
+  freeze_diag::Scope diagnostic(freeze_diag::CuckooRebuild);
   if (!g_state.cuckoo_settings_ui.isOpen()) {
     close_settings_overlay();
     return;
@@ -4901,6 +5009,20 @@ void gravitymon_gateway_loop(void) {
     g_state.settings_ui.clear();
     g_state.cuckoo_settings_ui.clear();
     close_settings_overlay();
+  }
+
+  // The fullscreen settings overlay hides the dashboard. Keep alerts and
+  // close requests active, but defer background visual updates until it closes.
+  const bool pause_cuckoo_visual =
+#if defined(GATEWAY_35) || (defined(ARDUINO_WAVESHARE_S3_TFT) && !defined(GMT154_06))
+      g_state.cuckoo_settings_ui.isOpen();
+#else
+      false;
+#endif
+  if (pause_cuckoo_visual) {
+    gravitymon_gateway_attempt_pending_alert_close();
+    gravitymon_gateway_update_alert_ui();
+    return;
   }
 
   if (layout_mgr.current_layout == 0) {

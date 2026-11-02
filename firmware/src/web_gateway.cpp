@@ -36,6 +36,7 @@ SOFTWARE.
 #include <sdcard_sd.hpp>
 #include <uptime.hpp>
 #include <utils.hpp>
+#include "settings_freeze_diag.hpp"
 #include <web_gateway.hpp>
 #include <cuckoo_pi_mqtt.hpp>
 #include <cuckoo_pi_model.hpp>
@@ -363,6 +364,17 @@ void GatewayWebServer::doWebStatus(JsonObject &obj) {
 
 bool GatewayWebServer::setupWebServer(const char *serviceName) {
   bool b = BrewingWebServer::setupWebServer(serviceName);
+
+  _server->on(
+      "/api/settings-freeze-diagnostic", (WebRequestMethodComposite)HTTP_GET,
+      [](AsyncWebServerRequest *request) {
+        char output[2304];
+        if (!freeze_diag::formatJson(output, sizeof(output), millis())) {
+          request->send(500, "application/json", "{\"error\":\"diagnostic snapshot too large\"}");
+          return;
+        }
+        request->send(200, "application/json", output);
+      });
 
   _server->on(
       "/api/factory", HTTP_POST,
